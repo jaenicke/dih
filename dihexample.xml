@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dih>
+	<entry id="ide_settings" description="IDE editor settings (external XML)">
+		<source>config\ide_settings.xml</source>
+	</entry>
+
+	<entry id="global" description="Global settings for DIH Example">
+		<paths>
+			<search platforms="Win32,Win64">
+				<path recursive="False">{#DcuTargetDir}</path>
+			</search>
+		</paths>
+	</entry>
+
+	<entry id="dihexample" description="DIH Example Component (TDIHMemo)">
+		<pre platforms="Win32,Win64">
+			<exec description="Compile DIHExample.Memo resource">brcc32 Source\DIHExample.Memo.rc -foSource\DIHExample.Memo.res</exec>
+		</pre>
+		<paths>
+			<browsing platforms="Win32,Win64">
+				<entry recursive="False">Source</entry>
+			</browsing>
+		</paths>
+		<files platforms="Win32,Win64">
+			<file target="{#DcuTargetDir}">Source\DIHExample.Memo.res</file>
+		</files>
+		<packages platforms="Win32">
+			<package description="DIH Example Design-Time Package">$(BDSCOMMONDIR)\Bpl\DIHExamplePkgD.bpl</package>
+		</packages>
+		<build platforms="Win32,Win64">
+			<project>Packages\DIHExamplePkgR.dproj</project>
+		</build>
+		<build platforms="Win32">
+			<project>Packages\DIHExamplePkgD.dproj</project>
+		</build>
+	</entry>
+</dih>

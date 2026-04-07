@@ -1,0 +1,5 @@
+// Resource script for TDIHMemo component
+// Compiled via pre-event: brcc32 DIHExample.Memo.rc -foDIHExample.Memo.res
+
+// Component bitmap for the Delphi component palette (24x24)
+TDIHMEMO BITMAP "DIHExample.Memo.bmp"

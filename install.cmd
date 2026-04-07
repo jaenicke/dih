@@ -1,0 +1,47 @@
+@echo off
+setlocal
+
+:: ============================================================================
+:: DIH Example - Install Script
+:: Builds delinst.exe, then uses it to build and install the component
+:: ============================================================================
+
+set BDSVER=37.0
+set DELINST=%~dp0delinst.exe
+set CONFIG=dihexample.xml
+set USEBDS=
+
+:: Build delinst.exe first (also detects if cmd compiler is available)
+call "%~dp0dih\builddih.cmd" %BDSVER%
+if %ERRORLEVEL% NEQ 0 goto :error
+
+:: builddih.cmd creates .dih_usebds marker if bds.exe was used
+if exist "%~dp0.dih_usebds" set USEBDS=-usebds
+
+echo.
+echo ============================================
+echo  DIH Example - Install (BDS %BDSVER%)
+echo ============================================
+echo.
+
+"%DELINST%" %BDSVER% -config "%CONFIG%" -platforms Win32 -configs Release -action install -verbose log %USEBDS%
+
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo Installation completed with errors. See dihexample.log for details.
+    goto :error
+)
+
+echo.
+echo Installation completed successfully.
+echo See dihexample.log for details.
+goto :end
+
+:error
+echo.
+pause
+exit /b 1
+
+:end
+pause
+exit /b 0
