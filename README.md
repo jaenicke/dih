@@ -2,6 +2,10 @@
 
 A command-line tool for automated installation, uninstallation, and building of Delphi component packages. It handles the complete lifecycle: compiling packages with **msbuild** (full versions) or **bds.exe** (Community Edition, Trial), registering BPL packages in the IDE, managing library paths (Registry + `EnvOptions.proj` for direct usage), copying files, setting registry values, and executing pre/post build events.
 
+Current version: 1.0 **beta**
+
+**This is the first version. It hasn't been thoroughly tested yet. I'm releasing it as a beta version, primarily to get feedback.**
+
 ## Features
 
 - **XML-driven configuration** - All settings defined in XML files, parsed via OmniXML (no MSXML dependency)
