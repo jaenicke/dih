@@ -30,9 +30,11 @@ Tested with:
 1. Place the `dih` folder in your component project
 2. Create an XML configuration file (see [Configuration Guide](GUIDE.md))
 3. Create batch scripts that call `delinst.exe` (see the included example)
-4. Run `install.cmd`
+4. Run `install.cmd` (if you do not use Delphi 13, you have to edit the batch files and put in the appropriate version)
 
 The tool bootstraps itself: the batch scripts build `delinst.exe` from source before using it.
+
+The dcu output directory should contain everything needed to use the units, for example .dfm files or ressource files. You can copy them using the files node. The example shows this by creating the image ressource for the component as pre build step and copying it to the target directory.
 
 ## Command Line
 
