@@ -36,6 +36,10 @@ The tool bootstraps itself: the batch scripts build `delinst.exe` from source be
 
 The dcu output directory should contain everything needed to use the units, for example .dfm files or ressource files. You can copy them using the files node. The example shows this by creating the image ressource for the component as pre build step and copying it to the target directory.
 
+## Example output
+
+<img width="1304" height="1329" alt="image" src="https://github.com/user-attachments/assets/8b95d563-86d3-4595-8255-23e6f8f41e6c" />
+
 ## Command Line
 
 ```
