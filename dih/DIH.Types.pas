@@ -51,6 +51,14 @@ type
     Platforms: TDIHPlatforms;
   end;
 
+  TDIHExpertEntry = record
+    /// <summary>Name unter dem der Expert in der Registry eingetragen wird.
+    ///  Falls leer, wird der BPL-Dateiname (ohne Endung) verwendet.</summary>
+    Name: string;
+    BplPath: string;
+    Platforms: TDIHPlatforms;
+  end;
+
   TDIHBuildProject = record
     ProjectPath: string;
     Platforms: TDIHPlatforms;
@@ -78,6 +86,7 @@ type
     FPaths: TList<TDIHPathEntry>;
     FFiles: TList<TDIHFileEntry>;
     FPackages: TList<TDIHPackageEntry>;
+    FExperts: TList<TDIHExpertEntry>;
     FBuildProjects: TList<TDIHBuildProject>;
     FRegistryValues: TList<TDIHRegistryValue>;
     FPreEvents: TList<TDIHEventEntry>;
@@ -91,6 +100,7 @@ type
     property Paths: TList<TDIHPathEntry> read FPaths;
     property Files: TList<TDIHFileEntry> read FFiles;
     property Packages: TList<TDIHPackageEntry> read FPackages;
+    property Experts: TList<TDIHExpertEntry> read FExperts;
     property BuildProjects: TList<TDIHBuildProject> read FBuildProjects;
     property RegistryValues: TList<TDIHRegistryValue> read FRegistryValues;
     property PreEvents: TList<TDIHEventEntry> read FPreEvents;
@@ -176,6 +186,7 @@ begin
   FPaths := TList<TDIHPathEntry>.Create;
   FFiles := TList<TDIHFileEntry>.Create;
   FPackages := TList<TDIHPackageEntry>.Create;
+  FExperts := TList<TDIHExpertEntry>.Create;
   FBuildProjects := TList<TDIHBuildProject>.Create;
   FRegistryValues := TList<TDIHRegistryValue>.Create;
   FPreEvents := TList<TDIHEventEntry>.Create;
@@ -189,6 +200,7 @@ begin
   FPaths.Free;
   FFiles.Free;
   FPackages.Free;
+  FExperts.Free;
   FBuildProjects.Free;
   FRegistryValues.Free;
   inherited;

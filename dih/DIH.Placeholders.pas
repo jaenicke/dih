@@ -18,13 +18,14 @@ type
     FValues: TDictionary<string, string>;
     FBaseDir: string;
     FBDSVersion: string;
+    FBDSProfile: string;
     FBDSCommonDir: string;
     FBDSRootDir: string;
     function ExpandEnvironmentVars(const AValue: string): string;
     function ConvertDollarParenToPercent(const AValue: string): string;
     procedure ReadBDSDirsFromRegistry;
   public
-    constructor Create(const ABaseDir, ABDSVersion: string);
+    constructor Create(const ABaseDir, ABDSVersion, ABDSProfile: string);
     destructor Destroy; override;
     procedure SetValue(const AName, AValue: string);
     procedure SetDefaults(APlatform: TDIHPlatform; const ABuildConfig: string);
@@ -34,6 +35,7 @@ type
     function GetRsVarsPath: string;
     property Values: TDictionary<string, string> read FValues;
     property BDSVersion: string read FBDSVersion;
+    property BDSProfile: string read FBDSProfile;
     property BDSCommonDir: string read FBDSCommonDir;
     property BDSRootDir: string read FBDSRootDir;
   end;
@@ -45,19 +47,25 @@ uses
 
 { TDIHPlaceholderResolver }
 
-constructor TDIHPlaceholderResolver.Create(const ABaseDir, ABDSVersion: string);
+constructor TDIHPlaceholderResolver.Create(const ABaseDir, ABDSVersion, ABDSProfile: string);
 begin
   inherited Create;
   FValues := TDictionary<string, string>.Create;
   FBaseDir := ABaseDir;
   FBDSVersion := ABDSVersion;
+  FBDSProfile := ABDSProfile;
 
-  // Read BDS and BDSCOMMONDIR from registry - these are NOT regular env vars
+  // Read BDS dirs from registry - profile determines the registry key name
   ReadBDSDirsFromRegistry;
 
   FValues.AddOrSetValue('BDSVersion', FBDSVersion);
-  FValues.AddOrSetValue('BDSProfileName', 'BDS');
-  FValues.AddOrSetValue('BDS', 'Software\Embarcadero\BDS\' + FBDSVersion);
+  // {$LIBSUFFIX AUTO} appends the product version without the dot
+  // ("37.0" -> "370"), so a config can name the built BPL without
+  // hard-coding the IDE version.
+  FValues.AddOrSetValue('LibSuffix',
+    StringReplace(FBDSVersion, '.', '', [rfReplaceAll]));
+  FValues.AddOrSetValue('BDSProfileName', FBDSProfile);
+  FValues.AddOrSetValue('BDS', 'Software\Embarcadero\' + FBDSProfile + '\' + FBDSVersion);
 end;
 
 destructor TDIHPlaceholderResolver.Destroy;
@@ -74,17 +82,20 @@ end;
 procedure TDIHPlaceholderResolver.ReadBDSDirsFromRegistry;
 var
   Reg: TRegistry;
-  BdsKey: string;
+  ProfileKey, BdsKey: string;
 begin
   FBDSRootDir := '';
   FBDSCommonDir := '';
+  // Profile determines the registry key: Software\Embarcadero\<Profile>\<Version>
+  ProfileKey := 'Software\Embarcadero\' + FBDSProfile + '\' + FBDSVersion;
+  // RootDir and CommonDir are always under the default BDS key
   BdsKey := 'Software\Embarcadero\BDS\' + FBDSVersion;
 
-  // Try HKCU first, then HKLM
   Reg := TRegistry.Create(KEY_READ);
   try
+    // Read RootDir from the profile key first, fall back to default BDS key
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKeyReadOnly(BdsKey) then
+    if Reg.OpenKeyReadOnly(ProfileKey) then
     begin
       try
         FBDSRootDir := Reg.ReadString('RootDir');
@@ -92,8 +103,19 @@ begin
         Reg.CloseKey;
       end;
     end;
+    if FBDSRootDir.IsEmpty and (ProfileKey <> BdsKey) then
+    begin
+      if Reg.OpenKeyReadOnly(BdsKey) then
+      begin
+        try
+          FBDSRootDir := Reg.ReadString('RootDir');
+        finally
+          Reg.CloseKey;
+        end;
+      end;
+    end;
 
-    // BDSCOMMONDIR is typically under HKLM
+    // BDSCOMMONDIR is typically under HKLM\...\BDS\<Version>
     Reg.RootKey := HKEY_LOCAL_MACHINE;
     if Reg.OpenKeyReadOnly(BdsKey) then
     begin

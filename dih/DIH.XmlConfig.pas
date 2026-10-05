@@ -23,6 +23,7 @@ type
     procedure ParsePathGroup(ANode: IXMLNode; APathType: TDIHPathType; AEntry: TDIHEntry);
     procedure ParseFiles(ANode: IXMLNode; AEntry: TDIHEntry);
     procedure ParsePackages(ANode: IXMLNode; AEntry: TDIHEntry);
+    procedure ParseExperts(ANode: IXMLNode; AEntry: TDIHEntry);
     procedure ParseBuild(ANode: IXMLNode; AEntry: TDIHEntry);
     procedure ParseRegistry(ANode: IXMLNode; AEntry: TDIHEntry);
     procedure ParseEvents(ANode: IXMLNode; AEntry: TDIHEntry; AIsPost: Boolean);
@@ -158,6 +159,8 @@ begin
       ParseFiles(Child, Entry)
     else if SameText(Child.NodeName, 'packages') then
       ParsePackages(Child, Entry)
+    else if SameText(Child.NodeName, 'experts') then
+      ParseExperts(Child, Entry)
     else if SameText(Child.NodeName, 'build') then
       ParseBuild(Child, Entry)
     else if SameText(Child.NodeName, 'registry') then
@@ -251,6 +254,28 @@ begin
       PkgEntry.Description := GetAttr(Child, 'description');
       PkgEntry.Platforms := Platforms;
       AEntry.Packages.Add(PkgEntry);
+    end;
+  end;
+end;
+
+procedure TDIHXmlConfig.ParseExperts(ANode: IXMLNode; AEntry: TDIHEntry);
+var
+  Platforms: TDIHPlatforms;
+  I: Integer;
+  Child: IXMLNode;
+  Expert: TDIHExpertEntry;
+begin
+  Platforms := ParsePlatforms(GetAttr(ANode, 'platforms'));
+
+  for I := 0 to ANode.ChildNodes.Count - 1 do
+  begin
+    Child := ANode.ChildNodes[I];
+    if SameText(Child.NodeName, 'expert') then
+    begin
+      Expert.BplPath := Child.Text;
+      Expert.Name := GetAttr(Child, 'name');
+      Expert.Platforms := Platforms;
+      AEntry.Experts.Add(Expert);
     end;
   end;
 end;

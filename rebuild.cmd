@@ -8,7 +8,7 @@ setlocal
 
 set BDSVER=37.0
 set DELINST=%~dp0delinst.exe
-set CONFIG=dihexample.xml
+set DIHCONFIG=dihexample.xml
 set USEBDS=
 
 :: Build delinst.exe first (also detects if cmd compiler is available)
@@ -24,7 +24,7 @@ echo  DIH Example - Build Only (BDS %BDSVER%)
 echo ============================================
 echo.
 
-"%DELINST%" %BDSVER% -config "%CONFIG%" -platforms Win32 -configs Release -entries dihexample -action build -verbose log %USEBDS%
+"%DELINST%" %BDSVER% -config "%DIHCONFIG%" -platforms Win32 -configs Release -entries dihexample -action build -verbose log %USEBDS%
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

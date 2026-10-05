@@ -26,6 +26,7 @@ type
     FDcuDir: string;
     FBplDir: string;
     FDcpDir: string;
+    FProfile: string;
     FVerboseTargets: TDIHVerboseTargets;
     procedure ShowUsage;
     function ParseVerbose(const AValue: string): TDIHVerboseTargets;
@@ -44,6 +45,7 @@ type
     property DcuDir: string read FDcuDir;
     property BplDir: string read FBplDir;
     property DcpDir: string read FDcpDir;
+    property Profile: string read FProfile;
     property VerboseTargets: TDIHVerboseTargets read FVerboseTargets;
   end;
 
@@ -64,6 +66,7 @@ begin
   FPlatforms := [dpWin32];
   FAction := daInstall;
   FUseBds := False;
+  FProfile := 'BDS';
   FVerboseTargets := [vtOutput, vtLog]; // Default: both
   FBuildConfigs.Add('Release');
 end;
@@ -115,6 +118,8 @@ begin
   Writeln('  -verbose <targets>    Where to show compiler output: output, log, or output,log');
   Writeln('                        Default: output,log');
   Writeln('  -usebds               Use bds.exe instead of msbuild');
+  Writeln('  -profile <name>       BDS registry profile name (passed as -r to bds.exe)');
+  Writeln('                        Default: BDS');
   Writeln('  -dcudir <path>        Override DCU output directory');
   Writeln('  -bpldir <path>        Override BPL output directory');
   Writeln('  -dcpdir <path>        Override DCP output directory');
@@ -230,6 +235,16 @@ begin
     end
     else if SameText(Param, '-usebds') then
       FUseBds := True
+    else if SameText(Param, '-profile') then
+    begin
+      Inc(I);
+      if I > ParamCount then
+      begin
+        Writeln('Error: -profile requires a name');
+        Exit;
+      end;
+      FProfile := ParamStr(I);
+    end
     else if SameText(Param, '-dcudir') then
     begin
       Inc(I);

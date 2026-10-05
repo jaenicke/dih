@@ -26,6 +26,7 @@ type
     FPathMgr: TDIHPathManager;
     FBuilderObj: TDIHBuilder;
     FPackageMgr: TDIHPackageManager;
+    FExpertMgr: TDIHExpertManager;
     FErrorCount: Integer;
     FSuccessCount: Integer;
     FEntryResults: TList<TDIHEntryResult>;
@@ -33,6 +34,8 @@ type
     procedure InstallEntry(AEntry: TDIHEntry; APlatform: TDIHPlatform; const ABuildConfig: string);
     procedure UninstallEntry(AEntry: TDIHEntry; APlatform: TDIHPlatform; const ABuildConfig: string);
     procedure BuildEntry(AEntry: TDIHEntry; APlatform: TDIHPlatform; const ABuildConfig: string);
+    function BuildProjectsOf(AEntry: TDIHEntry; APlatform: TDIHPlatform;
+      const ABuildConfig: string): Boolean;
     procedure AddEntryResult(const AEntryId, ADescription, APlatform, AConfig: string; ASuccess: Boolean;
       const AErrorMsg: string = '');
     procedure PrintSummary;
@@ -59,6 +62,7 @@ end;
 destructor TDIHEngine.Destroy;
 begin
   FEntryResults.Free;
+  FExpertMgr.Free;
   FPackageMgr.Free;
   FBuilderObj.Free;
   FPathMgr.Free;
@@ -169,6 +173,8 @@ begin
   end;
   FLogger.Info('Action: %s', [ActionStr]);
   FLogger.Info('BDS version: %s', [FCmdLine.BDSVersion]);
+  if not SameText(FCmdLine.Profile, 'BDS') then
+    FLogger.Info('BDS profile: %s', [FCmdLine.Profile]);
   FLogger.Info('Configuration: %s', [FCmdLine.ConfigFile]);
   FLogger.Info('Platforms: %s', [PlatformsToStr(FCmdLine.Platforms)]);
   FLogger.Info('Build configs: %s', [FCmdLine.BuildConfigs.DelimitedText]);
@@ -192,12 +198,13 @@ begin
   FLogger.Success('Configuration loaded: %d entries found', [FConfig.Entries.Count]);
 
   // Initialize components
-  FResolver := TDIHPlaceholderResolver.Create(BaseDir, FCmdLine.BDSVersion);
+  FResolver := TDIHPlaceholderResolver.Create(BaseDir, FCmdLine.BDSVersion, FCmdLine.Profile);
   FRegistryMgr := TDIHRegistryManager.Create(FLogger, FResolver);
   FFileOps := TDIHFileOperations.Create(FLogger, FResolver, BaseDir);
   FPathMgr := TDIHPathManager.Create(FLogger, FResolver);
   FBuilderObj := TDIHBuilder.Create(FLogger, FResolver, BaseDir, FCmdLine.UseBds);
   FPackageMgr := TDIHPackageManager.Create(FLogger, FResolver);
+  FExpertMgr := TDIHExpertManager.Create(FLogger, FResolver);
 
   // Apply custom directory overrides
   if not FCmdLine.DcuDir.IsEmpty then
@@ -376,19 +383,7 @@ begin
 
   // 4. Build projects
   if AEntry.BuildProjects.Count > 0 then
-  begin
-    FLogger.Info('Building projects...');
-    if FBuilderObj.Build(AEntry.BuildProjects.ToArray, APlatform, ABuildConfig) then
-    begin
-      FLogger.Success('All projects built successfully');
-      Inc(FSuccessCount);
-    end
-    else
-    begin
-      FLogger.Error('Some projects failed to build');
-      Inc(FErrorCount);
-    end;
-  end;
+    BuildProjectsOf(AEntry, APlatform, ABuildConfig);
 
   // 5. Register packages
   if AEntry.Packages.Count > 0 then
@@ -396,6 +391,15 @@ begin
     FLogger.Info('Registering packages...');
     FPackageMgr.RegisterPackages(AEntry.Packages.ToArray, APlatform);
     FLogger.Success('Packages registered: %d', [AEntry.Packages.Count]);
+    Inc(FSuccessCount);
+  end;
+
+  // 6. Register experts
+  if AEntry.Experts.Count > 0 then
+  begin
+    FLogger.Info('Registering experts...');
+    FExpertMgr.RegisterExperts(AEntry.Experts.ToArray, APlatform);
+    FLogger.Success('Experts registered: %d', [AEntry.Experts.Count]);
     Inc(FSuccessCount);
   end;
 
@@ -414,7 +418,16 @@ begin
 
   // Reverse order of install
 
-  // 1. Unregister packages
+  // 1a. Unregister experts
+  if AEntry.Experts.Count > 0 then
+  begin
+    FLogger.Info('Unregistering experts...');
+    FExpertMgr.UnregisterExperts(AEntry.Experts.ToArray, APlatform);
+    FLogger.Success('Experts unregistered');
+    Inc(FSuccessCount);
+  end;
+
+  // 1b. Unregister packages
   if AEntry.Packages.Count > 0 then
   begin
     FLogger.Info('Unregistering packages...');
@@ -455,6 +468,46 @@ begin
     ExecuteEvents(AEntry.PostEvents.ToArray, APlatform, 'Post-uninstall');
 end;
 
+// bds.exe IS the IDE, and the IDE loads every registered design-time
+// package - and every registered expert - at startup. That reports
+// "[Fataler Fehler] Package X.bpl kann nicht geladen werden" for a file the
+// build is about to create, and, worse, it HOLDS the very file we are going
+// to link. So this entry's own registrations are taken out while the build
+// runs and put back afterwards, whatever the build did (the user's idea,
+// 2026-10-05). Only on the bds path - msbuild starts no IDE. For an install
+// the registration step right after writes them anyway; for a plain build
+// action the restore is what keeps the user's registration.
+function TDIHEngine.BuildProjectsOf(AEntry: TDIHEntry; APlatform: TDIHPlatform;
+  const ABuildConfig: string): Boolean;
+var
+  Suspended: TArray<TDIHSuspendedValue>;
+begin
+  FLogger.Info('Building projects...');
+  Suspended := nil;
+  if FCmdLine.UseBds then
+  begin
+    Suspended := FPackageMgr.SuspendPackages(AEntry.Packages.ToArray, APlatform);
+    Suspended := Suspended +
+      FExpertMgr.SuspendExperts(AEntry.Experts.ToArray, APlatform);
+  end;
+  try
+    Result := FBuilderObj.Build(AEntry.BuildProjects.ToArray, APlatform, ABuildConfig);
+  finally
+    FPackageMgr.RestoreSuspended(Suspended);
+  end;
+
+  if Result then
+  begin
+    FLogger.Success('All projects built successfully');
+    Inc(FSuccessCount);
+  end
+  else
+  begin
+    FLogger.Error('Some projects failed to build');
+    Inc(FErrorCount);
+  end;
+end;
+
 procedure TDIHEngine.BuildEntry(AEntry: TDIHEntry; APlatform: TDIHPlatform; const ABuildConfig: string);
 begin
   // Pre-events
@@ -462,19 +515,7 @@ begin
     ExecuteEvents(AEntry.PreEvents.ToArray, APlatform, 'Pre-build');
 
   if AEntry.BuildProjects.Count > 0 then
-  begin
-    FLogger.Info('Building projects...');
-    if FBuilderObj.Build(AEntry.BuildProjects.ToArray, APlatform, ABuildConfig) then
-    begin
-      FLogger.Success('All projects built successfully');
-      Inc(FSuccessCount);
-    end
-    else
-    begin
-      FLogger.Error('Some projects failed to build');
-      Inc(FErrorCount);
-    end;
-  end
+    BuildProjectsOf(AEntry, APlatform, ABuildConfig)
   else
     FLogger.Warning('No build projects defined for entry "%s"', [AEntry.Id]);
 

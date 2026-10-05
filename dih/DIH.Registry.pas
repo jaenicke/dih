@@ -41,7 +41,7 @@ var
   RegVal: TDIHRegistryValue;
   Path: string;
 begin
-  Reg := TRegistry.Create(KEY_WRITE);
+  Reg := TRegistry.Create(KEY_READ or KEY_WRITE);
   try
     Reg.RootKey := HKEY_CURRENT_USER;
     for RegVal in AValues do
@@ -73,7 +73,7 @@ var
   RegVal: TDIHRegistryValue;
   Path: string;
 begin
-  Reg := TRegistry.Create(KEY_WRITE);
+  Reg := TRegistry.Create(KEY_READ or KEY_WRITE);
   try
     Reg.RootKey := HKEY_CURRENT_USER;
     for RegVal in AValues do
