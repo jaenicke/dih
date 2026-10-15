@@ -206,6 +206,14 @@ begin
   FPackageMgr := TDIHPackageManager.Create(FLogger, FResolver);
   FExpertMgr := TDIHExpertManager.Create(FLogger, FResolver);
 
+  // Delphi's common directory can belong to the account that INSTALLED the
+  // IDE rather than the one running this (forum report 2026-10-15). The
+  // resolver then builds and registers from a directory of our own, and says
+  // so here - once, before the first platform, because the alternative is a
+  // substitution nobody can see in the log.
+  if not FResolver.OutputNote.IsEmpty then
+    FLogger.Warning(FResolver.OutputNote);   // no Format - a path may carry a '%'
+
   // Apply custom directory overrides
   if not FCmdLine.DcuDir.IsEmpty then
     FResolver.SetValue('DcuTargetDir', FCmdLine.DcuDir);

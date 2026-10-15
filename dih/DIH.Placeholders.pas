@@ -13,6 +13,25 @@ uses
   System.SysUtils, System.Generics.Collections, DIH.Types;
 
 type
+  /// <summary>Can this account write into ADir? Injected so the rule below
+  ///  is testable without an unwritable directory to hand.</summary>
+  TDIHWriteProbe = reference to function(const ADir: string): Boolean;
+
+/// <summary>Where a build may put its BPL and DCP, and what to say about it.
+///  Delphi's installer writes the Documents folder of the INSTALLING account
+///  into rsvars.bat and the registry, so on a machine where that was an admin
+///  account, every other user's build dies with MSB3191 on a path it cannot
+///  create (forum report 2026-10-15). The IDE loads a package by the full
+///  path its registration names, so building into a directory of our own and
+///  registering THAT is the only way a non-admin can install a package there
+///  at all. ANote is empty when nothing is unusual - and never empty when
+///  something was substituted, because a silent substitution is worse than
+///  the error it replaces.</summary>
+procedure DecideBuildOutputRoot(const ACommonDir, ABDSVersion,
+  ALocalAppData: string; const ACanWrite: TDIHWriteProbe;
+  out ARoot, ANote: string);
+
+type
   TDIHPlaceholderResolver = class
   private
     FValues: TDictionary<string, string>;
@@ -21,9 +40,12 @@ type
     FBDSProfile: string;
     FBDSCommonDir: string;
     FBDSRootDir: string;
+    FOutputRoot: string;
+    FOutputNote: string;
     function ExpandEnvironmentVars(const AValue: string): string;
     function ConvertDollarParenToPercent(const AValue: string): string;
     procedure ReadBDSDirsFromRegistry;
+    procedure DecideOutputRoot;
   public
     constructor Create(const ABaseDir, ABDSVersion, ABDSProfile: string);
     destructor Destroy; override;
@@ -38,12 +60,24 @@ type
     property BDSProfile: string read FBDSProfile;
     property BDSCommonDir: string read FBDSCommonDir;
     property BDSRootDir: string read FBDSRootDir;
+    /// <summary>Where the BPL and the DCP really go. The same as
+    ///  BDSCommonDir unless THIS account cannot write there - which happens
+    ///  when Delphi was installed by another user, because its installer
+    ///  writes that user's Documents folder into rsvars.bat and the
+    ///  registry (forum report 2026-10-15: C:\Users\ADMHUMMMA\Documents).
+    ///  </summary>
+    property OutputRoot: string read FOutputRoot;
+    /// <summary>Empty when nothing is unusual; otherwise the sentence that
+    ///  names what could not be written and where the output goes instead.
+    ///  The caller logs it - a silent substitution is worse than the
+    ///  error it replaces.</summary>
+    property OutputNote: string read FOutputNote;
   end;
 
 implementation
 
 uses
-  Winapi.Windows, System.Win.Registry;
+  Winapi.Windows, System.IOUtils, System.Win.Registry;
 
 { TDIHPlaceholderResolver }
 
@@ -134,11 +168,72 @@ begin
   // Fallback: construct BDSCOMMONDIR from known pattern
   if FBDSCommonDir.IsEmpty then
     FBDSCommonDir := ExpandEnvironmentVars('%PUBLIC%') + '\Documents\Embarcadero\Studio\' + FBDSVersion;
+
+  DecideOutputRoot;
+end;
+
+// Can this account put a file into ADir? A missing directory is created -
+// the build would do that anyway - and the probe file is removed again.
+function CanWriteInto(const ADir: string): Boolean;
+var
+  Probe: string;
+begin
+  Result := False;
+  if ADir.IsEmpty then Exit;
+  try
+    if not TDirectory.Exists(ADir) then
+      if not ForceDirectories(ADir) then Exit;
+    Probe := IncludeTrailingPathDelimiter(ADir) + '.dih-write-probe.tmp';
+    TFile.WriteAllText(Probe, 'x');
+    TFile.Delete(Probe);
+    Result := True;
+  except
+    on E: Exception do Result := False;
+  end;
+end;
+
+procedure DecideBuildOutputRoot(const ACommonDir, ABDSVersion,
+  ALocalAppData: string; const ACanWrite: TDIHWriteProbe;
+  out ARoot, ANote: string);
+var
+  Alt: string;
+begin
+  ARoot := ACommonDir;
+  ANote := '';
+  if not Assigned(ACanWrite) then Exit;
+  if ACanWrite(ACommonDir) then Exit;
+
+  Alt := IncludeTrailingPathDelimiter(ALocalAppData) + 'Embarcadero' +
+    PathDelim + 'Studio' + PathDelim + ABDSVersion;
+  if not ACanWrite(Alt) then
+  begin
+    // Both refused: the build is going to fail, and the reason is worth more
+    // than the MSB3191 it will fail with.
+    ANote := Format('WARNING: this account can write to neither "%s" nor ' +
+      '"%s", so the build will fail. Delphi was installed by another user - ' +
+      'its installer writes that path into rsvars.bat and the registry.',
+      [ACommonDir, Alt]);
+    Exit;
+  end;
+  ARoot := Alt;
+  ANote := Format('Delphi''s common directory "%s" cannot be written by this ' +
+    'account (Delphi was installed by another user), so the BPL and the DCP ' +
+    'go to "%s" and are registered from there.', [ACommonDir, Alt]);
+end;
+
+procedure TDIHPlaceholderResolver.DecideOutputRoot;
+begin
+  // BDSCommonDir itself is deliberately left ALONE: an existing registration
+  // spelled "$(BDSCOMMONDIR)\Bpl\X.bpl" means the IDE's value, and the
+  // duplicate / stale-entry / suspend checks compare paths against it.
+  DecideBuildOutputRoot(FBDSCommonDir, FBDSVersion,
+    ExpandEnvironmentVars('%LOCALAPPDATA%'), CanWriteInto,
+    FOutputRoot, FOutputNote);
 end;
 
 procedure TDIHPlaceholderResolver.SetDefaults(APlatform: TDIHPlatform; const ABuildConfig: string);
 var
-  PlatStr, DcuDir, BplDir, DcpDir, PlatSubDir: string;
+  PlatStr, DcuDir, BplDir, DcpDir, HppDir, PlatSubDir: string;
 begin
   PlatStr := APlatform.ToString;
 
@@ -149,12 +244,19 @@ begin
     PlatSubDir := PathDelim + PlatStr;
 
   DcuDir := IncludeTrailingPathDelimiter(FBaseDir) + 'DCU' + PathDelim + PlatStr + PathDelim + ABuildConfig;
-  BplDir := FBDSCommonDir + PathDelim + 'Bpl' + PlatSubDir;
-  DcpDir := FBDSCommonDir + PathDelim + 'Dcp' + PlatSubDir;
+  // OutputRoot, not BDSCommonDir - see DecideOutputRoot.
+  BplDir := FOutputRoot + PathDelim + 'Bpl' + PlatSubDir;
+  DcpDir := FOutputRoot + PathDelim + 'Dcp' + PlatSubDir;
+  // The C++ headers: the same place the IDE uses, so this changes nothing
+  // where the common directory IS writable - and it follows the fallback
+  // where it is not. CodeGear.Delphi.Targets creates this directory for
+  // every project, whether or not it emits a header.
+  HppDir := FOutputRoot + PathDelim + 'hpp' + PathDelim + PlatStr;
 
   FValues.AddOrSetValue('DcuTargetDir', DcuDir);
   FValues.AddOrSetValue('BplTargetDir', BplDir);
   FValues.AddOrSetValue('DcpTargetDir', DcpDir);
+  FValues.AddOrSetValue('HppTargetDir', HppDir);
   FValues.AddOrSetValue('BDSCommonDir', FBDSCommonDir);
   FValues.AddOrSetValue('BDSRootDir', FBDSRootDir);
   FValues.AddOrSetValue('Platform', PlatStr);

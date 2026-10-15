@@ -36,7 +36,12 @@ set "MSBUILD_LOG=%TEMP%\dih_msbuild.log"
 :: /tv:4.0: without it MSBuild takes the machine's default toolset, and a
 :: default of 2.0 needs .NET 3.5 for its task assemblies (MSB4036 on the
 :: forum machine of 2026-10-06). Delphi points at .NET 4.x itself.
-msbuild "%DPROJ%" /t:Build /tv:4.0 /p:Platform=Win32 /p:Config=Release /p:DCC_ExeOutput="%EXEDIR%\." /v:m /nologo > "%MSBUILD_LOG%" 2>&1
+:: An EXE project writes no BPL, no DCP and no .hpp - but CodeGear.Delphi
+:: .Targets creates those directories anyway, and they default to
+:: $(BDSCOMMONDIR), which rsvars.bat hard-codes to the Documents folder of
+:: whoever INSTALLED Delphi. Where that is another account, msbuild dies
+:: with MSB3191 on folders this build never uses (forum log 2026-10-15).
+msbuild "%DPROJ%" /t:Build /tv:4.0 /p:Platform=Win32 /p:Config=Release /p:DCC_ExeOutput="%EXEDIR%\." /p:DCC_BplOutput="%TEMP%" /p:DCC_DcpOutput="%TEMP%" /p:DCC_HppOutput="%TEMP%" /v:m /nologo > "%MSBUILD_LOG%" 2>&1
 set MSBUILD_ERR=%ERRORLEVEL%
 
 :: Check for "does not support command line compiling" in output

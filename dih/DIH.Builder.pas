@@ -53,7 +53,7 @@ type
       const ABuildConfig: string): Boolean;
     procedure SetEnv(const AName, AValue: string);
     procedure CreateSingleProjectGroupProj(const AGroupProjPath, AProjectPath: string; APlatform: TDIHPlatform;
-      const ABuildConfig, ADcuDir, ABplDir, ADcpDir: string);
+      const ABuildConfig, ADcuDir, ABplDir, ADcpDir, AHppDir: string);
     function ReadBdsErrFile(const AErrPath: string): Boolean;
     procedure CleanupBdsTempFiles(const AGroupProjPath: string);
     function RelocateBdsArtifacts(const AProjectPath, ABplDir, ADcpDir: string;
@@ -239,7 +239,7 @@ end;
 function TDIHBuilder.BuildWithMSBuild(const AProjectPath: string; APlatform: TDIHPlatform;
   const ABuildConfig, AExtraParams: string): Boolean;
 var
-  Cmd, FullProjectPath, DcuDir, BplDir, DcpDir: string;
+  Cmd, FullProjectPath, DcuDir, BplDir, DcpDir, HppDir: string;
 begin
   FullProjectPath := AProjectPath;
   if not TPath.IsPathRooted(FullProjectPath) then
@@ -248,6 +248,7 @@ begin
   DcuDir := FResolver.Resolve('{#DcuTargetDir}');
   BplDir := FResolver.Resolve('{#BplTargetDir}');
   DcpDir := FResolver.Resolve('{#DcpTargetDir}');
+  HppDir := FResolver.Resolve('{#HppTargetDir}');
 
   // /tv:4.0 - a .dproj carries no ToolsVersion (Delphi's own projects do
   // not either), so MSBuild falls back to the machine's default toolset.
@@ -256,8 +257,9 @@ begin
   // installed - which is what a forum log of 2026-10-06 shows, on an IDE
   // that points at .NET 4.x itself. Naming the toolset takes that choice
   // away from the machine.
-  Cmd := Format('msbuild.exe "%s" /t:Build /tv:4.0 /p:Platform=%s /p:Config=%s /p:DCC_DcuOutput="%s" /p:DCC_BplOutput="%s" /p:DCC_DcpOutput="%s"',
-    [FullProjectPath, APlatform.ToString, ABuildConfig, DcuDir, BplDir, DcpDir]);
+  Cmd := Format('msbuild.exe "%s" /t:Build /tv:4.0 /p:Platform=%s /p:Config=%s /p:DCC_DcuOutput="%s" /p:DCC_BplOutput="%s" /p:DCC_DcpOutput="%s" /p:DCC_HppOutput="%s"',
+    [FullProjectPath, APlatform.ToString, ABuildConfig, DcuDir, BplDir, DcpDir,
+     HppDir]);
 
   if not AExtraParams.IsEmpty then
     Cmd := Cmd + ' ' + AExtraParams;
@@ -267,14 +269,15 @@ begin
 end;
 
 procedure TDIHBuilder.CreateSingleProjectGroupProj(const AGroupProjPath, AProjectPath: string; APlatform: TDIHPlatform;
-  const ABuildConfig, ADcuDir, ABplDir, ADcpDir: string);
+  const ABuildConfig, ADcuDir, ABplDir, ADcpDir, AHppDir: string);
 var
   SL: TStringList;
   ProjName, Props: string;
 begin
   ProjName := ChangeFileExt(ExtractFileName(AProjectPath), '');
-  Props := Format('Platform=%s;Config=%s;DCC_DcuOutput=%s;DCC_BplOutput=%s;DCC_DcpOutput=%s',
-    [APlatform.ToString, ABuildConfig, ADcuDir, ABplDir, ADcpDir]);
+  Props := Format('Platform=%s;Config=%s;DCC_DcuOutput=%s;DCC_BplOutput=%s;' +
+    'DCC_DcpOutput=%s;DCC_HppOutput=%s',
+    [APlatform.ToString, ABuildConfig, ADcuDir, ABplDir, ADcpDir, AHppDir]);
 
   SL := TStringList.Create;
   try
@@ -521,7 +524,7 @@ end;
 function TDIHBuilder.BuildWithBdsProjects(const AProjects: TArray<TDIHBuildProject>; APlatform: TDIHPlatform;
   const ABuildConfig: string): Boolean;
 var
-  BdsExe, BdsProfile, Cmd, FullProjectPath, DcuDir, BplDir, DcpDir, GroupProjPath, ErrPath: string;
+  BdsExe, BdsProfile, Cmd, FullProjectPath, DcuDir, BplDir, DcpDir, HppDir, GroupProjPath, ErrPath: string;
   Proj: TDIHBuildProject;
   I: Integer;
   BuildStart: TDateTime;
@@ -532,6 +535,7 @@ begin
   DcuDir := FResolver.Resolve('{#DcuTargetDir}');
   BplDir := FResolver.Resolve('{#BplTargetDir}');
   DcpDir := FResolver.Resolve('{#DcpTargetDir}');
+  HppDir := FResolver.Resolve('{#HppTargetDir}');
 
   // Build each project individually so we can pass output directories
   for I := 0 to High(AProjects) do
@@ -545,7 +549,7 @@ begin
     // Create a single-project groupproj with the correct properties
     GroupProjPath := IncludeTrailingPathDelimiter(FBaseDir) + '_dih_temp.groupproj';
     ErrPath := IncludeTrailingPathDelimiter(FBaseDir) + '_dih_temp.err';
-    CreateSingleProjectGroupProj(GroupProjPath, FullProjectPath, APlatform, ABuildConfig, DcuDir, BplDir, DcpDir);
+    CreateSingleProjectGroupProj(GroupProjPath, FullProjectPath, APlatform, ABuildConfig, DcuDir, BplDir, DcpDir, HppDir);
 
     try
       FLogger.ClearBuildOutput;
