@@ -88,6 +88,39 @@ Copies files to a target directory. Supports wildcards (`*.res`, `*.dcr`, etc.).
 </files>
 ```
 
+| Attribute | Values | Default | Description |
+|---|---|---|---|
+| `platforms` | `Win32`, `Win64` | all | Platforms this group is copied for |
+| `stage` | `after-build` | *(before the build)* | When the group is copied |
+
+By default the files are **inputs** to the build and are copied before it -
+a resource the compiler needs, for instance. `stage="after-build"` marks them
+as **artefacts** of this entry's own `<build>`, so they are copied once the
+projects are compiled:
+
+```xml
+<build platforms="Win32">
+    <project>Tools\MyTool.dproj</project>
+</build>
+<files platforms="Win32" stage="after-build">
+    <file target="{#LocalAppData}\MyComponent\bin">Tools\Bin\MyTool.exe</file>
+</files>
+```
+
+Without it the copy would run before the compiler and install the *previous*
+build. Both stages may appear in one entry: use two `<files>` elements, one of
+each. When the build fails, the artefacts are **not** copied - the target keeps
+the file it had - and the log says how many were left alone.
+
+A target that is currently **running** can still be replaced: Windows refuses
+to overwrite such a file but allows renaming it, so the old one is moved aside
+as `<name>.<number>.old` and the new one takes its place. The aside copy is
+left behind on purpose - a file somebody is executing cannot be deleted - and
+the log names it.
+
+A source file or directory that is not there **fails the entry** and is
+reported in the summary. Nothing is installed half way without saying so.
+
 During uninstall, the copied files are deleted from the target directory.
 
 ### build
@@ -195,6 +228,8 @@ Split configuration into multiple files using `<source>`. The referenced file mu
 | `{#BDSVersion}` | `23.0` | BDS version number |
 | `{#BDSRootDir}` | `C:\Program Files (x86)\...\Studio\23.0` | BDS installation directory |
 | `{#BDSCommonDir}` | `C:\Users\Public\...\Studio\23.0` | BDS common directory |
+| `{#LibSuffix}` | `230` | BDS version without the dot - the suffix `{$LIBSUFFIX AUTO}` appends to a package, so a config can name the built BPL without hard-coding the IDE version |
+| `{#LocalAppData}` | `C:\Users\me\AppData\Local` | The current user's local application data directory (from the environment, so a packaged host's redirected view is what a target resolves to) |
 
 ### Environment Variables (`$(...)`)
 

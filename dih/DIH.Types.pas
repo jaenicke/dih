@@ -43,6 +43,13 @@ type
     Source: string;
     Target: string;
     Platforms: TDIHPlatforms;
+    /// <summary>False (the default) = the file is an INPUT and is copied
+    ///  before the build, which is the order DIH always had. True = it is
+    ///  a build ARTEFACT (&lt;files stage="after-build"&gt;) and is copied
+    ///  once the projects of this entry are built - otherwise an entry
+    ///  that builds an exe and installs it would copy the PREVIOUS
+    ///  build.</summary>
+    AfterBuild: Boolean;
   end;
 
   TDIHPackageEntry = record
@@ -105,6 +112,12 @@ type
     property RegistryValues: TList<TDIHRegistryValue> read FRegistryValues;
     property PreEvents: TList<TDIHEventEntry> read FPreEvents;
     property PostEvents: TList<TDIHEventEntry> read FPostEvents;
+
+    /// <summary>True when this entry has anything to do for APlatform.
+    ///  An entry may be limited to one platform - a helper exe that serves
+    ///  both IDEs is built once - and reporting "OK" for the other one
+    ///  claims a result for work that never happened.</summary>
+    function HasWorkFor(APlatform: TDIHPlatform): Boolean;
   end;
 
   TDIHPlatformHelper = record helper for TDIHPlatform
@@ -191,6 +204,28 @@ begin
   FRegistryValues := TList<TDIHRegistryValue>.Create;
   FPreEvents := TList<TDIHEventEntry>.Create;
   FPostEvents := TList<TDIHEventEntry>.Create;
+end;
+
+function TDIHEntry.HasWorkFor(APlatform: TDIHPlatform): Boolean;
+var
+  P: TDIHPathEntry;
+  F: TDIHFileEntry;
+  K: TDIHPackageEntry;
+  X: TDIHExpertEntry;
+  B: TDIHBuildProject;
+  E: TDIHEventEntry;
+begin
+  // Registry values carry no platform of their own, so an entry that has
+  // any is work on every platform.
+  if FRegistryValues.Count > 0 then Exit(True);
+  for P in FPaths do if APlatform in P.Platforms then Exit(True);
+  for F in FFiles do if APlatform in F.Platforms then Exit(True);
+  for K in FPackages do if APlatform in K.Platforms then Exit(True);
+  for X in FExperts do if APlatform in X.Platforms then Exit(True);
+  for B in FBuildProjects do if APlatform in B.Platforms then Exit(True);
+  for E in FPreEvents do if APlatform in E.Platforms then Exit(True);
+  for E in FPostEvents do if APlatform in E.Platforms then Exit(True);
+  Result := False;
 end;
 
 destructor TDIHEntry.Destroy;

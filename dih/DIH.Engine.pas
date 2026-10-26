@@ -105,14 +105,22 @@ end;
 procedure TDIHEngine.PrintSummary;
 var
   R: TDIHEntryResult;
-  SuccessTotal, ErrorTotal: Integer;
-  StatusStr: string;
+  SuccessTotal, ErrorTotal, W: Integer;
+  StatusStr, Fmt: string;
 begin
+  // The id column follows the longest id. A fixed width turned every
+  // row of a longer entry into a shifted line, and this table is the
+  // one thing people read after an install.
+  W := Length('Entry');
+  for R in FEntryResults do
+    if Length(R.EntryId) > W then W := Length(R.EntryId);
+  Fmt := '  %-' + IntToStr(W) + 's %-8s %-10s %s';
+
   FLogger.Separator;
   FLogger.Info('Summary:');
   FLogger.Info('');
-  FLogger.Info('  %-20s %-8s %-10s %s', ['Entry', 'Platform', 'Config', 'Result']);
-  FLogger.Info('  %-20s %-8s %-10s %s', ['--------------------', '--------', '----------', '----------']);
+  FLogger.Info(Fmt, ['Entry', 'Platform', 'Config', 'Result']);
+  FLogger.Info(Fmt, [StringOfChar('-', W), '--------', '----------', '----------']);
 
   SuccessTotal := 0;
   ErrorTotal := 0;
@@ -123,7 +131,7 @@ begin
     begin
       StatusStr := 'OK';
       Inc(SuccessTotal);
-      FLogger.Success('  %-20s %-8s %-10s %s', [R.EntryId, R.Platform, R.Config, StatusStr]);
+      FLogger.Success(Fmt, [R.EntryId, R.Platform, R.Config, StatusStr]);
     end
     else
     begin
@@ -132,7 +140,7 @@ begin
       else
         StatusStr := 'FAILED: ' + R.ErrorMsg;
       Inc(ErrorTotal);
-      FLogger.Error('  %-20s %-8s %-10s %s', [R.EntryId, R.Platform, R.Config, StatusStr]);
+      FLogger.Error(Fmt, [R.EntryId, R.Platform, R.Config, StatusStr]);
     end;
   end;
 
@@ -266,6 +274,14 @@ var
   EntrySuccess: Boolean;
   SavedErrors: Integer;
 begin
+  // An entry with nothing to do on this platform gets no row: "OK" for
+  // work that never happened reads like a result.
+  if not AEntry.HasWorkFor(APlatform) then
+  begin
+    FLogger.Detail('Entry %s: nothing to do for %s', [AEntry.Id, APlatform.ToString]);
+    Exit;
+  end;
+
   FLogger.Info('Entry: %s - %s', [AEntry.Id, AEntry.Description]);
   FLogger.IncIndent;
 
@@ -356,7 +372,9 @@ end;
 
 procedure TDIHEngine.InstallEntry(AEntry: TDIHEntry; APlatform: TDIHPlatform; const ABuildConfig: string);
 var
-  FileCount: Integer;
+  FileCount, Failed, Pending: Integer;
+  Built: Boolean;
+  F: TDIHFileEntry;
 begin
   // Pre-events
   if AEntry.PreEvents.Count > 0 then
@@ -380,18 +398,60 @@ begin
     Inc(FSuccessCount);
   end;
 
-  // 3. Copy files
+  // 3. Copy files that are INPUTS to the build
   if AEntry.Files.Count > 0 then
   begin
-    FLogger.Info('Copying files...');
-    FileCount := FFileOps.CopyFiles(AEntry.Files.ToArray, APlatform);
-    FLogger.Success('Files copied: %d', [FileCount]);
-    Inc(FSuccessCount);
+    FileCount := FFileOps.CopyFiles(AEntry.Files.ToArray, APlatform, False, Failed);
+    if FileCount > 0 then
+    begin
+      FLogger.Success('Files copied: %d', [FileCount]);
+      Inc(FSuccessCount);
+    end;
+    // A file that did not arrive must reach the SUMMARY - that is the only
+    // place anybody reads, and an "OK" row above an error line is how a
+    // stale file can survive version after version. CopyFiles has already
+    // named each one, so a pass in which everything failed adds the errors
+    // and no success line at all.
+    Inc(FErrorCount, Failed);
   end;
 
   // 4. Build projects
+  Built := True;
   if AEntry.BuildProjects.Count > 0 then
-    BuildProjectsOf(AEntry, APlatform, ABuildConfig);
+    Built := BuildProjectsOf(AEntry, APlatform, ABuildConfig);
+
+  // 4b. ... and the ARTEFACTS of that build afterwards. An entry that
+  // builds an exe and installs it would otherwise copy the PREVIOUS
+  // build - the copy ran before the compiler did.
+  if AEntry.Files.Count > 0 then
+  begin
+    if Built then
+    begin
+      FileCount := FFileOps.CopyFiles(AEntry.Files.ToArray, APlatform, True, Failed);
+      if FileCount > 0 then
+      begin
+        FLogger.Success('Build artefacts installed: %d', [FileCount]);
+        Inc(FSuccessCount);
+      end;
+      Inc(FErrorCount, Failed);
+    end
+    else
+    begin
+      // The "artefacts" of a build that FAILED are the files of the
+      // PREVIOUS build. Installing those is exactly what this stage
+      // exists to prevent: the target would be replaced by a stale
+      // binary, the entry would log it as installed, and a post event
+      // would then verify the old file. The build's own failure is
+      // already counted - this says what did NOT happen because of it.
+      Pending := 0;
+      for F in AEntry.Files do
+        if F.AfterBuild and (APlatform in F.Platforms) then
+          Inc(Pending);
+      if Pending > 0 then
+        FLogger.Warning('Build failed - %d build artefact(s) were NOT ' +
+          'installed, so the target keeps the file it had', [Pending]);
+    end;
+  end;
 
   // 5. Register packages
   if AEntry.Packages.Count > 0 then

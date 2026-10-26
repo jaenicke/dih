@@ -220,8 +220,13 @@ var
   I: Integer;
   Child: IXMLNode;
   FileEntry: TDIHFileEntry;
+  AfterBuild: Boolean;
 begin
   Platforms := ParsePlatforms(GetAttr(ANode, 'platforms'));
+  // stage="after-build" marks the files as ARTEFACTS of this entry's own
+  // build. Anything else (and a missing attribute) keeps the order DIH
+  // always had: files are inputs and are copied first.
+  AfterBuild := SameText(Trim(GetAttr(ANode, 'stage')), 'after-build');
 
   for I := 0 to ANode.ChildNodes.Count - 1 do
   begin
@@ -231,6 +236,7 @@ begin
       FileEntry.Source := Child.Text;
       FileEntry.Target := GetAttr(Child, 'target');
       FileEntry.Platforms := Platforms;
+      FileEntry.AfterBuild := AfterBuild;
       AEntry.Files.Add(FileEntry);
     end;
   end;

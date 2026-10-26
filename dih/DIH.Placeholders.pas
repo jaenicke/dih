@@ -93,6 +93,10 @@ begin
   ReadBDSDirsFromRegistry;
 
   FValues.AddOrSetValue('BDSVersion', FBDSVersion);
+  // Where a per-user tool belongs. Read from the environment, so a
+  // packaged (MSIX) host's redirected view is what a target resolves to -
+  // the same folder that host's own processes see.
+  FValues.AddOrSetValue('LocalAppData', GetEnvironmentVariable('LOCALAPPDATA'));
   // {$LIBSUFFIX AUTO} appends the product version without the dot
   // ("37.0" -> "370"), so a config can name the built BPL without
   // hard-coding the IDE version.
