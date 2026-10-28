@@ -125,8 +125,36 @@ type
     class function FromString(const AValue: string): TDIHPlatform; static;
   end;
 
+  /// <summary>A step of an install entry that comes after its build.</summary>
+  TDIHAfterBuildStep = (abCopyArtefacts, abRegisterPackages, abRegisterExperts, abPostEvents);
+  TDIHAfterBuildSteps = set of TDIHAfterBuildStep;
+
 function ParsePlatforms(const AValue: string): TDIHPlatforms;
 function PlatformsToStr(APlatforms: TDIHPlatforms): string;
+
+/// <summary>What an install entry still does after its build - the one
+///  answer to what a failed build means for the rest of the entry (#52).
+///  A build that FAILED leaves the PREVIOUS build's files behind: copying
+///  them installs a stale binary, registering the entry's packages and
+///  experts registers the old ones as if they were new, and a post event
+///  would verify the old file. So nothing follows a failed build. An entry
+///  without a build counts as built. Asked once in InstallEntry, not once
+///  per step: a per-step "if Built" is how steps 5, 6 and the post events
+///  were missed. UninstallEntry does not ask it - removing what is
+///  registered does not depend on a build.</summary>
+function AfterBuildSteps(ABuilt: Boolean): TDIHAfterBuildSteps;
+
+/// <summary>What a FAILED artefact copy takes back out of that answer.
+///  Only the post events: they check what was INSTALLED, and when the
+///  copy did not arrive the target still holds the file it had - an event
+///  that answers there reports the stale one as installed, which is how a
+///  nine-day-old MCP bridge survived (1.15.2). The registrations are NOT
+///  withdrawn: a package is registered where the BUILD writes its BPL,
+///  not where a file copy puts it. Asked as a second question instead of
+///  taking the copy's outcome into AfterBuildSteps, because the copy
+///  happens AFTER that answer is needed - and moving the call below it is
+///  how a per-step "if Built" comes back (#52).</summary>
+function WithdrawnByCopy(ACopyFailed: Boolean): TDIHAfterBuildSteps;
 
 const
   AllPlatforms: TDIHPlatforms = [dpWin32, dpWin64];
@@ -189,6 +217,22 @@ begin
   finally
     SL.Free;
   end;
+end;
+
+function AfterBuildSteps(ABuilt: Boolean): TDIHAfterBuildSteps;
+begin
+  if ABuilt then
+    Result := [Low(TDIHAfterBuildStep)..High(TDIHAfterBuildStep)]
+  else
+    Result := [];
+end;
+
+function WithdrawnByCopy(ACopyFailed: Boolean): TDIHAfterBuildSteps;
+begin
+  if ACopyFailed then
+    Result := [abPostEvents]
+  else
+    Result := [];
 end;
 
 { TDIHEntry }

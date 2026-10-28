@@ -373,8 +373,12 @@ end;
 procedure TDIHEngine.InstallEntry(AEntry: TDIHEntry; APlatform: TDIHPlatform; const ABuildConfig: string);
 var
   FileCount, Failed, Pending: Integer;
-  Built: Boolean;
+  Built, CopyFailed: Boolean;
+  Steps: TDIHAfterBuildSteps;
   F: TDIHFileEntry;
+  K: TDIHPackageEntry;
+  X: TDIHExpertEntry;
+  E: TDIHEventEntry;
 begin
   // Pre-events
   if AEntry.PreEvents.Count > 0 then
@@ -417,15 +421,28 @@ begin
 
   // 4. Build projects
   Built := True;
+  // Whether an artefact copy FAILED is its own fact, written on every
+  // path below: Failed is an out parameter of CopyFiles and stays
+  // uninitialised for an entry that has no files at all, so the gate may
+  // not read it.
+  CopyFailed := False;
   if AEntry.BuildProjects.Count > 0 then
     Built := BuildProjectsOf(AEntry, APlatform, ABuildConfig);
+
+  // Everything after the build depends on it, and AfterBuildSteps is the
+  // one place that says how (#52). Each step it withholds logs a warning
+  // naming the count of this platform's items, as 4b does: the build's own
+  // failure is already counted, the warning says what did NOT happen
+  // because of it - and an item for the other platform would not have
+  // happened anyway.
+  Steps := AfterBuildSteps(Built);
 
   // 4b. ... and the ARTEFACTS of that build afterwards. An entry that
   // builds an exe and installs it would otherwise copy the PREVIOUS
   // build - the copy ran before the compiler did.
   if AEntry.Files.Count > 0 then
   begin
-    if Built then
+    if abCopyArtefacts in Steps then
     begin
       FileCount := FFileOps.CopyFiles(AEntry.Files.ToArray, APlatform, True, Failed);
       if FileCount > 0 then
@@ -434,6 +451,7 @@ begin
         Inc(FSuccessCount);
       end;
       Inc(FErrorCount, Failed);
+      CopyFailed := Failed > 0;
     end
     else
     begin
@@ -453,27 +471,79 @@ begin
     end;
   end;
 
-  // 5. Register packages
+  // The build was good but its artefact did not reach the target: the
+  // same question again, with the outcome that did not exist above.
+  Steps := Steps - WithdrawnByCopy(CopyFailed);
+
+  // 5. Register packages - after a failed build that would register the
+  // previous BPL as installed. The registration the IDE had stays: on the
+  // bds path BuildProjectsOf has already put it back.
   if AEntry.Packages.Count > 0 then
   begin
-    FLogger.Info('Registering packages...');
-    FPackageMgr.RegisterPackages(AEntry.Packages.ToArray, APlatform);
-    FLogger.Success('Packages registered: %d', [AEntry.Packages.Count]);
-    Inc(FSuccessCount);
+    if abRegisterPackages in Steps then
+    begin
+      FLogger.Info('Registering packages...');
+      FPackageMgr.RegisterPackages(AEntry.Packages.ToArray, APlatform);
+      FLogger.Success('Packages registered: %d', [AEntry.Packages.Count]);
+      Inc(FSuccessCount);
+    end
+    else
+    begin
+      Pending := 0;
+      for K in AEntry.Packages do
+        if APlatform in K.Platforms then
+          Inc(Pending);
+      if Pending > 0 then
+        FLogger.Warning('Build failed - %d package registration(s) skipped',
+          [Pending]);
+    end;
   end;
 
   // 6. Register experts
   if AEntry.Experts.Count > 0 then
   begin
-    FLogger.Info('Registering experts...');
-    FExpertMgr.RegisterExperts(AEntry.Experts.ToArray, APlatform);
-    FLogger.Success('Experts registered: %d', [AEntry.Experts.Count]);
-    Inc(FSuccessCount);
+    if abRegisterExperts in Steps then
+    begin
+      FLogger.Info('Registering experts...');
+      FExpertMgr.RegisterExperts(AEntry.Experts.ToArray, APlatform);
+      FLogger.Success('Experts registered: %d', [AEntry.Experts.Count]);
+      Inc(FSuccessCount);
+    end
+    else
+    begin
+      Pending := 0;
+      for X in AEntry.Experts do
+        if APlatform in X.Platforms then
+          Inc(Pending);
+      if Pending > 0 then
+        FLogger.Warning('Build failed - %d expert registration(s) skipped',
+          [Pending]);
+    end;
   end;
 
-  // Post-events
+  // Post-events - they check what was installed, and after a failed build
+  // that is nothing: they would verify the old file. Same when the build
+  // was good and its artefact did not arrive.
   if AEntry.PostEvents.Count > 0 then
-    ExecuteEvents(AEntry.PostEvents.ToArray, APlatform, 'Post-install');
+  begin
+    if abPostEvents in Steps then
+      ExecuteEvents(AEntry.PostEvents.ToArray, APlatform, 'Post-install')
+    else
+    begin
+      Pending := 0;
+      for E in AEntry.PostEvents do
+        if APlatform in E.Platforms then
+          Inc(Pending);
+      if Pending > 0 then
+        if Built then
+          FLogger.Warning('Artefact copy failed - %d post-install event(s) ' +
+            'skipped: they would answer for the file the target already had',
+            [Pending])
+        else
+          FLogger.Warning('Build failed - %d post-install event(s) skipped',
+            [Pending]);
+    end;
+  end;
 end;
 
 procedure TDIHEngine.UninstallEntry(AEntry: TDIHEntry; APlatform: TDIHPlatform; const ABuildConfig: string);
