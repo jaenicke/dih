@@ -228,7 +228,7 @@ Split configuration into multiple files using `<source>`. The referenced file mu
 | `{#BDSVersion}` | `23.0` | BDS version number |
 | `{#BDSRootDir}` | `C:\Program Files (x86)\...\Studio\23.0` | BDS installation directory |
 | `{#BDSCommonDir}` | `C:\Users\Public\...\Studio\23.0` | BDS common directory |
-| `{#LibSuffix}` | `230` | BDS version without the dot - the suffix `{$LIBSUFFIX AUTO}` appends to a package, so a config can name the built BPL without hard-coding the IDE version |
+| `{#LibSuffix}` | `290` | The suffix `{$LIBSUFFIX AUTO}` appends to a package, read from the installation: the digits of the `rtl*.bpl` that IDE ships. Only Delphi 13 has it equal to its own version (`37.0` -> `370`) - Delphi 11 registers as `22.0` with `280`, Delphi 12 as `23.0` with `290` - so a config can name the built BPL without hard-coding either number. Falls back to the version without its dot |
 | `{#LocalAppData}` | `C:\Users\me\AppData\Local` | The current user's local application data directory (from the environment, so a packaged host's redirected view is what a target resolves to) |
 
 ### Environment Variables (`$(...)`)
